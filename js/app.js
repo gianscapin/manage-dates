@@ -3,6 +3,8 @@ import UI from './classes/Ui.js'
 
 // Variables
 
+export let DB;
+
 const petInput = document.getElementById('mascota')
 const ownerInput = document.getElementById('propietario')
 const phoneInput = document.getElementById('telefono')
@@ -20,9 +22,16 @@ let editing;
 const ui = new UI();
 const admDates = new Dates();
 
+
+
+
+window.onload = () =>{
+    eventListeners();
+    createDB();
+}
+
 // Funciones
 
-eventListeners();
 
 function eventListeners(){
     petInput.addEventListener('change', datesData)
@@ -62,23 +71,50 @@ function newDate(e){
 
 
     if(editing){
-        ui.printAlert('Datos editados correctamente.')
 
         admDates.editDate({...dateObj});
 
-        form.querySelector('button[type="submit"]').textContent = 'CREAR CITA';
+        // Edita en IndexDB
+        const transaction = DB.transaction(['dates'],'readwrite');
+        const objectStore = transaction.objectStore('dates');
 
-        editing = false;
+        objectStore.put(dateObj)
+
+        transaction.oncomplete = () =>{
+            ui.printAlert('Datos editados correctamente.')
+
+            form.querySelector('button[type="submit"]').textContent = 'CREAR CITA';
+
+            editing = false;
+
+        }
+
+        transaction.onerror = () =>{
+            console.log('Hubo un error');
+        }
 
 
 
     }else{
-        ui.printAlert('Datos agregados correctamente.')
+        
         // Crear id de la cita
         dateObj.id = Date.now();
 
         // Agregar cita
         admDates.addDates({...dateObj});
+
+        // Insertar Registro en IndexedDB
+        const transaction = DB.transaction(['dates'],'readwrite');
+
+        const objectStore = transaction.objectStore('dates');
+        
+        objectStore.add(dateObj);
+
+        transaction.oncomplete = function(){
+            console.log('Cita agregada')
+            
+            ui.printAlert('Datos agregados correctamente.')
+        }
 
        
     }
@@ -91,7 +127,7 @@ function newDate(e){
     form.reset();
 
     // Mostrar en el HTML las citas
-    ui.printDates(admDates)
+    ui.printDates()
 }
 
 function resetObjetc(){
@@ -106,11 +142,21 @@ function resetObjetc(){
 // Elimina la cita
 
 export function deleteDate(id){
-    admDates.deleteDate(id);
+    
+    const transaction = DB.transaction(['dates'],'readwrite');
+    const objectStore = transaction.objectStore('dates');
 
-    ui.printAlert('La cita se eliminó correctamente.');
+    objectStore.delete(id);
 
-    ui.printDates(admDates);
+    transaction.oncomplete = () =>{
+        ui.printAlert('La cita se eliminó correctamente.');
+        ui.printDates();
+    }
+
+    transaction.onerror = () =>{
+        console.log('Hubo un error');
+    }
+
 }
 
 // Carga datos y edita la cita.
@@ -142,4 +188,47 @@ export function loadEdit(date){
     editing = true;
 
 
+}
+
+function createDB(){
+    const createDB = window.indexedDB.open('dates',1);
+
+    // Si hay error
+    createDB.onerror = function(){
+        console.log('Hubo un error')
+    }
+
+    // Si sale todo bien
+
+    createDB.onsuccess = function(){
+        console.log('Base de datos creada')
+
+        DB = createDB.result;
+
+        ui.printDates();
+    }
+
+
+    // Definir esquema
+
+    createDB.onupgradeneeded = function(e){
+        const db = e.target.result;
+
+        const objectStore = db.createObjectStore('dates',{
+            keyPath: 'id',
+            autoincrement: true
+        });
+
+        // Definir todas las columnas
+
+        objectStore.createIndex('pet','pet',{unique:false})
+        objectStore.createIndex('owner','owner',{unique:false})
+        objectStore.createIndex('phone','phone',{unique:false})
+        objectStore.createIndex('date','date',{unique:false})
+        objectStore.createIndex('hour','hour',{unique:false})
+        objectStore.createIndex('sympthoms','sympthoms',{unique:false})
+        objectStore.createIndex('id','id',{unique:true})
+
+        console.log('DB creada y lista')
+    }
 }
